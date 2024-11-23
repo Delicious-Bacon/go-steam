@@ -272,14 +272,26 @@ func (c *Client) heartbeatLoop(seconds time.Duration) {
 		c.heartbeat.Stop()
 	}
 	c.heartbeat = time.NewTicker(seconds * time.Second)
+	defer func() {
+		c.heartbeat = nil
+	}()
+
 	for {
-		_, ok := <-c.heartbeat.C
-		if !ok {
+		if c.heartbeat == nil {
 			break
 		}
-		c.Write(protocol.NewClientMsgProtobuf(steamlang.EMsg_ClientHeartBeat, new(protobuf.CMsgClientHeartBeat)))
+
+		select {
+		case _, ok := <-c.heartbeat.C:
+			if !ok {
+				return
+			}
+			c.Write(protocol.NewClientMsgProtobuf(steamlang.EMsg_ClientHeartBeat, new(protobuf.CMsgClientHeartBeat)))
+		case <-time.After(5 * time.Minute):
+			c.Errorf("failed to get heartbeat tick after 5 minutes, returning early")
+			return
+		}
 	}
-	c.heartbeat = nil
 }
 
 func (c *Client) handlePacket(packet *protocol.Packet) {
