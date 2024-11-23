@@ -301,7 +301,7 @@ func (c *Client) heartbeatLoop(seconds time.Duration) {
 			}
 			c.Write(protocol.NewClientMsgProtobuf(steamlang.EMsg_ClientHeartBeat, new(protobuf.CMsgClientHeartBeat)))
 		case <-time.After(5 * time.Minute):
-			c.Errorf("failed to get heartbeat tick after 5 minutes, returning early")
+			// failed to get heartbeat tick after 5 minutes, returning early
 			return
 		}
 	}
