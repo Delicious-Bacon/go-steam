@@ -19,7 +19,6 @@ type LoggedOnEvent struct {
 	CellIdPingThreshold       uint32
 	Steam2Ticket              []byte
 	UsePics                   bool
-	WebApiUserNonce           string
 	IpCountryCode             string
 	VanityUrl                 string
 	NumLoginFailuresToMigrate int32

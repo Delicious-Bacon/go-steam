@@ -18,6 +18,12 @@ func (j JobId) String() string {
 	return strconv.FormatUint(uint64(j), 10)
 }
 
+type TargetJobName string
+
+type Realm uint32
+
+type EErrorMessage string
+
 type Serializer interface {
 	Serialize(w io.Writer) error
 }

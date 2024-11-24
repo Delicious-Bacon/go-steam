@@ -46,7 +46,9 @@ type Client struct {
 	handlers      []PacketHandler
 	handlersMutex sync.RWMutex
 
-	tempSessionKey []byte
+	jobHandlersMutex sync.RWMutex
+	jobHandlers      map[protocol.JobId]chan *protocol.Packet
+	tempSessionKey   []byte
 
 	ConnectionTimeout time.Duration
 
@@ -87,6 +89,8 @@ func NewClient() *Client {
 	client.GC = newGC(client)
 	client.RegisterPacketHandler(client.GC)
 
+	client.jobHandlers = map[protocol.JobId]chan *protocol.Packet{}
+
 	return client
 }
 
@@ -116,6 +120,14 @@ func (c *Client) RegisterPacketHandler(handler PacketHandler) {
 	c.handlersMutex.Lock()
 	defer c.handlersMutex.Unlock()
 	c.handlers = append(c.handlers, handler)
+}
+
+func (c *Client) WaitForJobPacket(jobID protocol.JobId) chan *protocol.Packet {
+	c.jobHandlersMutex.Lock()
+	defer c.jobHandlersMutex.Unlock()
+	ch := make(chan *protocol.Packet, 1)
+	c.jobHandlers[jobID] = ch
+	return ch
 }
 
 func (c *Client) GetNextJobId() protocol.JobId {
@@ -321,14 +333,19 @@ func (c *Client) handlePacket(packet *protocol.Packet) {
 		c.handleChannelEncryptResult(packet)
 	case steamlang.EMsg_Multi:
 		c.handleMulti(packet)
-	case steamlang.EMsg_ClientCMList:
-		c.handleClientCMList(packet)
 	}
 
 	c.handlersMutex.RLock()
 	defer c.handlersMutex.RUnlock()
 	for _, handler := range c.handlers {
 		handler.HandlePacket(packet)
+	}
+
+	c.jobHandlersMutex.RLock()
+	defer c.jobHandlersMutex.RUnlock()
+	if ch, ok := c.jobHandlers[packet.TargetJobId]; ok {
+		ch <- packet
+		delete(c.jobHandlers, packet.TargetJobId)
 	}
 }
 
@@ -402,21 +419,6 @@ func (c *Client) handleMulti(packet *protocol.Packet) {
 		}
 		c.handlePacket(p)
 	}
-}
-
-func (c *Client) handleClientCMList(packet *protocol.Packet) {
-	body := new(protobuf.CMsgClientCMList)
-	packet.ReadProtoMsg(body)
-
-	l := make([]*netutil.PortAddr, 0)
-	for i, ip := range body.GetCmAddresses() {
-		l = append(l, &netutil.PortAddr{
-			readIp(ip),
-			uint16(body.GetCmPorts()[i]),
-		})
-	}
-
-	c.Emit(&ClientCMListEvent{l})
 }
 
 func readIp(ip uint32) net.IP {

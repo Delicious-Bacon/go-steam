@@ -74,6 +74,7 @@ func buildProto() {
 	print("# Building Protobufs")
 
 	buildProtoMap("steam", clientProtoFiles, "../protocol/protobuf")
+	buildProtoMap("steam", clientUnifiedExtraProtoFiles, "../protocol/protobuf")
 	buildProtoMap("tf2", tf2ProtoFiles, "../tf2/protocol/protobuf")
 	buildProtoMap("dota2", dotaProtoFiles, "../dota/protocol/protobuf")
 	buildProtoMap("csgo", csgoProtoFiles, "../csgo/protocol/protobuf")
@@ -133,6 +134,12 @@ var clientProtoFiles = map[string]string{
 	"steammessages_partnerapps.steamclient.proto":       "unified/partnerapps.pb.go",
 	"steammessages_player.steamclient.proto":            "unified/player.pb.go",
 	"steammessages_publishedfile.steamclient.proto":     "unified/publishedfile.pb.go",
+}
+
+// Duplicate protos that also need to be generated in unified
+var clientUnifiedExtraProtoFiles = map[string]string{
+	"steammessages_base.proto": "unified/mbase.pb.go",
+	"offline_ticket.proto":     "unified/offline_ticket.pb.go",
 }
 
 var tf2ProtoFiles = map[string]string{
