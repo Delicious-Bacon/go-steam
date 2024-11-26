@@ -23,7 +23,7 @@ import (
 	"github.com/Philipp15b/go-steam/v3/protocol/steamlang"
 )
 
-const usage string = "usage: gsbot [username] [-p password] [-a authcode] [-t twofactorcode] [-l loginkey]"
+const usage string = "usage: gsbot [username] [-p password] [-a authcode] [-t twofactorcode]"
 
 func main() {
 	if len(os.Args) < 3 || len(os.Args)%2 != 0 {
@@ -44,8 +44,6 @@ func main() {
 			details.AuthCode = os.Args[i+1]
 		case "-t":
 			details.TwoFactorCode = os.Args[i+1]
-		case "-l":
-			details.LoginKey = os.Args[i+1]
 		default:
 			fmt.Println(usage)
 			return

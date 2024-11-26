@@ -29,56 +29,66 @@ type LogOnDetails struct {
 	AuthCode string
 
 	// If you have a Steam Guard mobile two-factor authentication code, you can provide it here.
-	TwoFactorCode  string
+	TwoFactorCode string
+	// Deprecated, only used for some legacy accounts with Steam Guard disabled
 	SentryFileHash SentryHash
-	LoginKey       string
+
+	RefreshToken string
+
+	// Required to set Steam ID if using a refresh token
+	SteamID *steamid.SteamId
 
 	// true if you want to get a login key which can be used in lieu of
 	// a password for subsequent logins. false or omitted otherwise.
 	ShouldRememberPassword bool
 }
 
-// Log on with the given details. You must always specify username and
-// password OR username and loginkey. For the first login, don't set an authcode or a hash and you'll
+// LogOn with the given details. You can either specify a username/password/2FA code OR a refresh token.
 //
-//	receive an error (EResult_AccountLogonDenied)
+// If you fail to provide a 2FA/token entry then Steam will send you an authcode. Then you have to login again,
+// this time with the authcode. Shortly after logging in, you'll receive a MachineAuthUpdateEvent with a hash which
+// allows you to login without using an authcode in the future.
 //
-// and Steam will send you an authcode. Then you have to login again, this time with the authcode.
-// Shortly after logging in, you'll receive a MachineAuthUpdateEvent with a hash which allows
-// you to login without using an authcode in the future.
-//
-// If you don't use Steam Guard, username and password are enough.
-//
-// After the event EMsg_ClientNewLoginKey is received you can use the LoginKey
-// to login instead of using the password.
+// If you don't use Steam Guard, username and password are enough for the first login. Subsequent logins will
+// require a refresh token OR sentry (if it has Steam Guard disabled)
 func (a *Auth) LogOn(details *LogOnDetails) {
-	if details.Username == "" {
-		panic("Username must be set!")
-	}
-	if details.Password == "" && details.LoginKey == "" {
-		panic("Password or LoginKey must be set!")
+	if details.Username == "" && details.Password == "" && details.RefreshToken == "" {
+		panic("must set at least refresh token or the username/password")
 	}
 
 	logon := new(protobuf.CMsgClientLogon)
-	logon.AccountName = &details.Username
-	logon.Password = &details.Password
+	logon.ClientLanguage = proto.String("english")
+	logon.ProtocolVersion = proto.Uint32(steamlang.MsgClientLogon_CurrentProtocol)
+	logon.ClientOsType = proto.Uint32(20) // Windows 11
+	logon.ChatMode = proto.Uint32(2)      // New chat
+
+	if details.Username != "" {
+		logon.AccountName = &details.Username
+	}
+	if details.Password != "" {
+		logon.Password = &details.Password
+	}
 	if details.AuthCode != "" {
 		logon.AuthCode = proto.String(details.AuthCode)
 	}
 	if details.TwoFactorCode != "" {
 		logon.TwoFactorCode = proto.String(details.TwoFactorCode)
 	}
-	logon.ClientLanguage = proto.String("english")
-	logon.ProtocolVersion = proto.Uint32(steamlang.MsgClientLogon_CurrentProtocol)
-	logon.ShaSentryfile = details.SentryFileHash
-	if details.LoginKey != "" {
-		logon.LoginKey = proto.String(details.LoginKey)
+	if details.RefreshToken != "" {
+		logon.AccessToken = &details.RefreshToken
+	}
+	if details.SentryFileHash != nil {
+		logon.ShaSentryfile = details.SentryFileHash
 	}
 	if details.ShouldRememberPassword {
 		logon.ShouldRememberPassword = proto.Bool(details.ShouldRememberPassword)
 	}
 
-	atomic.StoreUint64(&a.client.steamId, uint64(steamid.NewIdAdv(0, 1, int32(steamlang.EUniverse_Public), int32(steamlang.EAccountType_Individual))))
+	if details.SteamID != nil {
+		atomic.StoreUint64(&a.client.steamId, uint64(*details.SteamID))
+	} else {
+		atomic.StoreUint64(&a.client.steamId, uint64(steamid.NewIdAdv(0, 1, int32(steamlang.EUniverse_Public), int32(steamlang.EAccountType_Individual))))
+	}
 
 	a.client.Write(protocol.NewClientMsgProtobuf(steamlang.EMsg_ClientLogon, logon))
 }
