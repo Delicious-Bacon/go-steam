@@ -82,10 +82,13 @@ func (c *tcpConnection) Read() (*protocol.Packet, error) {
 
 	// Packets after ChannelEncryptResult are encrypted
 	c.cipherMutex.RLock()
+	defer c.cipherMutex.RUnlock()
 	if c.ciph != nil {
-		buf = cryptoutil.SymmetricDecrypt(c.ciph, buf)
+		buf, err = cryptoutil.SymmetricDecrypt(c.ciph, buf)
+		if err != nil {
+			return nil, err
+		}
 	}
-	c.cipherMutex.RUnlock()
 
 	return protocol.NewPacket(buf)
 }
