@@ -5,6 +5,7 @@ package steamlang
 
 import (
 	"encoding/binary"
+	"errors"
 	"github.com/Philipp15b/go-steam/v3/protocol/protobuf"
 	"github.com/Philipp15b/go-steam/v3/rwu"
 	"github.com/Philipp15b/go-steam/v3/steamid"
@@ -410,6 +411,9 @@ func (d *MsgHdrProtoBuf) Deserialize(r io.Reader) error {
 	d.HeaderLength, err = rwu.ReadInt32(r)
 	if err != nil {
 		return err
+	}
+	if d.HeaderLength < 0 {
+		return errors.New("negative header length")
 	}
 	buf1 := make([]byte, d.HeaderLength, d.HeaderLength)
 	_, err = io.ReadFull(r, buf1)
