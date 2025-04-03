@@ -217,7 +217,7 @@ func (s *Social) HandlePacket(packet *protocol.Packet) {
 	case steamlang.EMsg_ClientClanState:
 		s.handleClanState(packet)
 	case steamlang.EMsg_ClientFriendsList:
-		s.handleFriendsList(packet)
+		// s.handleFriendsList(packet)
 	case steamlang.EMsg_ClientFriendMsgIncoming:
 		s.handleFriendMsg(packet)
 	case steamlang.EMsg_ClientAccountInfo:
@@ -247,52 +247,52 @@ func (s *Social) handleAccountInfo(packet *protocol.Packet) {
 	s.RequestFriendInfo(s.client.SteamId(), steamlang.EClientPersonaStateFlag(flags))
 }
 
-func (s *Social) handleFriendsList(packet *protocol.Packet) {
-	list := new(protobuf.CMsgClientFriendsList)
-	packet.ReadProtoMsg(list)
-	var friends []steamid.SteamId
-	for _, friend := range list.GetFriends() {
-		steamId := steamid.SteamId(friend.GetUlfriendid())
-		isClan := steamId.GetAccountType() == int32(steamlang.EAccountType_Clan)
+// func (s *Social) handleFriendsList(packet *protocol.Packet) {
+// 	list := new(protobuf.CMsgClientFriendsList)
+// 	packet.ReadProtoMsg(list)
+// 	var friends []steamid.SteamId
+// 	for _, friend := range list.GetFriends() {
+// 		steamId := steamid.SteamId(friend.GetUlfriendid())
+// 		isClan := steamId.GetAccountType() == int32(steamlang.EAccountType_Clan)
 
-		if isClan {
-			rel := steamlang.EClanRelationship(friend.GetEfriendrelationship())
-			if rel == steamlang.EClanRelationship_None {
-				s.Groups.Remove(steamId)
-			} else {
-				s.Groups.Add(socialcache.Group{
-					SteamId:      steamId,
-					Relationship: rel,
-				})
+// 		if isClan {
+// 			rel := steamlang.EClanRelationship(friend.GetEfriendrelationship())
+// 			if rel == steamlang.EClanRelationship_None {
+// 				s.Groups.Remove(steamId)
+// 			} else {
+// 				s.Groups.Add(socialcache.Group{
+// 					SteamId:      steamId,
+// 					Relationship: rel,
+// 				})
 
-			}
-			if list.GetBincremental() {
-				s.client.Emit(&GroupStateEvent{steamId, rel})
-			}
-		} else {
-			rel := steamlang.EFriendRelationship(friend.GetEfriendrelationship())
-			if rel == steamlang.EFriendRelationship_None {
-				s.Friends.Remove(steamId)
-			} else {
-				s.Friends.Add(socialcache.Friend{
-					SteamId:      steamId,
-					Relationship: rel,
-				})
+// 			}
+// 			if list.GetBincremental() {
+// 				s.client.Emit(&GroupStateEvent{steamId, rel})
+// 			}
+// 		} else {
+// 			rel := steamlang.EFriendRelationship(friend.GetEfriendrelationship())
+// 			if rel == steamlang.EFriendRelationship_None {
+// 				s.Friends.Remove(steamId)
+// 			} else {
+// 				s.Friends.Add(socialcache.Friend{
+// 					SteamId:      steamId,
+// 					Relationship: rel,
+// 				})
 
-			}
-			if list.GetBincremental() {
-				s.client.Emit(&FriendStateEvent{steamId, rel})
-			}
-		}
-		if !list.GetBincremental() {
-			friends = append(friends, steamId)
-		}
-	}
-	if !list.GetBincremental() {
-		s.RequestFriendListInfo(friends, protocol.EClientPersonaStateFlag_DefaultInfoRequest)
-		s.client.Emit(&FriendsListEvent{})
-	}
-}
+// 			}
+// 			if list.GetBincremental() {
+// 				s.client.Emit(&FriendStateEvent{steamId, rel})
+// 			}
+// 		}
+// 		if !list.GetBincremental() {
+// 			friends = append(friends, steamId)
+// 		}
+// 	}
+// 	if !list.GetBincremental() {
+// 		s.RequestFriendListInfo(friends, protocol.EClientPersonaStateFlag_DefaultInfoRequest)
+// 		s.client.Emit(&FriendsListEvent{})
+// 	}
+// }
 
 func (s *Social) handlePersonaState(packet *protocol.Packet) {
 	list := new(protobuf.CMsgClientPersonaState)

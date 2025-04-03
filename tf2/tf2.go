@@ -6,8 +6,6 @@ package tf2
 import (
 	"github.com/Philipp15b/go-steam/v3"
 	"github.com/Philipp15b/go-steam/v3/protocol/gamecoordinator"
-	"github.com/Philipp15b/go-steam/v3/tf2/protocol"
-	"github.com/Philipp15b/go-steam/v3/tf2/protocol/protobuf"
 )
 
 const AppId = 440
@@ -33,29 +31,29 @@ func (t *TF2) SetPlaying(playing bool) {
 	}
 }
 
-func (t *TF2) SetItemPosition(itemId, position uint64) {
-	t.client.GC.Write(gamecoordinator.NewGCMsg(AppId, uint32(protobuf.EGCItemMsg_k_EMsgGCSetSingleItemPosition), &protocol.MsgGCSetItemPosition{
-		itemId, position,
-	}))
-}
+// func (t *TF2) SetItemPosition(itemId, position uint64) {
+// 	t.client.GC.Write(gamecoordinator.NewGCMsg(AppId, uint32(protobuf.EGCItemMsg_k_EMsgGCSetSingleItemPosition), &protocol.MsgGCSetItemPosition{
+// 		itemId, position,
+// 	}))
+// }
 
-// recipe -2 = wildcard
-func (t *TF2) CraftItems(items []uint64, recipe int16) {
-	t.client.GC.Write(gamecoordinator.NewGCMsg(AppId, uint32(protobuf.EGCItemMsg_k_EMsgGCCraft), &protocol.MsgGCCraft{
-		Recipe: recipe,
-		Items:  items,
-	}))
-}
+// // recipe -2 = wildcard
+// func (t *TF2) CraftItems(items []uint64, recipe int16) {
+// 	t.client.GC.Write(gamecoordinator.NewGCMsg(AppId, uint32(protobuf.EGCItemMsg_k_EMsgGCCraft), &protocol.MsgGCCraft{
+// 		Recipe: recipe,
+// 		Items:  items,
+// 	}))
+// }
 
-func (t *TF2) DeleteItem(itemId uint64) {
-	t.client.GC.Write(gamecoordinator.NewGCMsg(AppId, uint32(protobuf.EGCItemMsg_k_EMsgGCDelete), &protocol.MsgGCDeleteItem{itemId}))
-}
+// func (t *TF2) DeleteItem(itemId uint64) {
+// 	t.client.GC.Write(gamecoordinator.NewGCMsg(AppId, uint32(protobuf.EGCItemMsg_k_EMsgGCDelete), &protocol.MsgGCDeleteItem{itemId}))
+// }
 
-func (t *TF2) NameItem(toolId, target uint64, name string) {
-	t.client.GC.Write(gamecoordinator.NewGCMsg(AppId, uint32(protobuf.EGCItemMsg_k_EMsgGCNameItem), &protocol.MsgGCNameItem{
-		toolId, target, name,
-	}))
-}
+// func (t *TF2) NameItem(toolId, target uint64, name string) {
+// 	t.client.GC.Write(gamecoordinator.NewGCMsg(AppId, uint32(protobuf.EGCItemMsg_k_EMsgGCNameItem), &protocol.MsgGCNameItem{
+// 		toolId, target, name,
+// 	}))
+// }
 
 type GCReadyEvent struct{}
 
@@ -63,10 +61,10 @@ func (t *TF2) HandleGCPacket(packet *gamecoordinator.GCPacket) {
 	if packet.AppId != AppId {
 		return
 	}
-	switch protobuf.EGCBaseClientMsg(packet.MsgType) {
-	case protobuf.EGCBaseClientMsg_k_EMsgGCClientWelcome:
-		t.handleWelcome(packet)
-	}
+	// switch protobuf.EGCBaseClientMsg(packet.MsgType) {
+	// case protobuf.EGCBaseClientMsg_k_EMsgGCClientWelcome:
+	// 	t.handleWelcome(packet)
+	// }
 }
 
 func (t *TF2) handleWelcome(packet *gamecoordinator.GCPacket) {

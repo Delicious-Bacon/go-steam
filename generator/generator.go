@@ -73,11 +73,12 @@ func buildSteamLanguage() {
 func buildProto() {
 	print("# Building Protobufs")
 
-	buildProtoMap("steam", clientProtoFiles, "../protocol/protobuf")
+	// buildProtoMap("steam", clientProtoFiles, "../protocol/protobuf")
+	buildProtoMap("webui", webuiProtoFiles, "../protocol/protobuf")
 	buildProtoMap("steam", clientUnifiedExtraProtoFiles, "../protocol/protobuf")
-	buildProtoMap("tf2", tf2ProtoFiles, "../tf2/protocol/protobuf")
-	buildProtoMap("dota2", dotaProtoFiles, "../dota/protocol/protobuf")
-	buildProtoMap("csgo", csgoProtoFiles, "../csgo/protocol/protobuf")
+	// buildProtoMap("tf2", tf2ProtoFiles, "../tf2/protocol/protobuf")
+	// buildProtoMap("dota2", dotaProtoFiles, "../dota/protocol/protobuf")
+	// buildProtoMap("csgo", csgoProtoFiles, "../csgo/protocol/protobuf")
 }
 
 func buildProtoMap(srcSubdir string, files map[string]string, outDir string) {
@@ -140,6 +141,11 @@ var clientProtoFiles = map[string]string{
 var clientUnifiedExtraProtoFiles = map[string]string{
 	"steammessages_base.proto": "unified/mbase.pb.go",
 	"offline_ticket.proto":     "unified/offline_ticket.pb.go",
+}
+
+var webuiProtoFiles = map[string]string{
+	"common.proto":      "common.pb.go",
+	"common_base.proto": "common_base.pb.go",
 }
 
 var tf2ProtoFiles = map[string]string{

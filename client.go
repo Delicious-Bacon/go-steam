@@ -6,13 +6,14 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"golang.org/x/net/proxy"
 	"hash/crc32"
-	"io/ioutil"
+	"io"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/net/proxy"
 
 	"github.com/Philipp15b/go-steam/v3/cryptoutil"
 	"github.com/Philipp15b/go-steam/v3/netutil"
@@ -399,7 +400,7 @@ func (c *Client) handleMulti(packet *protocol.Packet) {
 			return
 		}
 
-		payload, err = ioutil.ReadAll(r)
+		payload, err = io.ReadAll(r)
 		if err != nil {
 			c.Errorf("handleMulti: Error while decompressing: %v", err)
 			return
