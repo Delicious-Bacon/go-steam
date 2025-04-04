@@ -8,17 +8,17 @@ We generate Go code from SteamKit protocol descriptors, namely `steamlang` files
 
     ```
     ✗ protoc --version
-    libprotoc 3.17.1
+    libprotoc 3.15.8
     ```
 
-3. Install `protoc-gen-go`: `go get google.golang.org/protobuf/cmd/protoc-gen-go`
+3. Install `protoc-gen-go`: `go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.27.1`.
 
     ```
     ✗ protoc-gen-go --version
     protoc-gen-go v1.27.1
     ```
 
-4. Install the .NET Core SDK (3.1 or later).
+4. Install the .NET Core SDK (3.1 or later). I used 9.0.104.
 
 ## Execute generator
 

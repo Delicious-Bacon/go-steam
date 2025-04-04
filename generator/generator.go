@@ -113,10 +113,10 @@ var clientProtoFiles = map[string]string{
 
 	"steammessages_clientserver.proto":         "client_server.pb.go",
 	"steammessages_clientserver_2.proto":       "client_server_2.pb.go",
+	"steammessages_clientserver_appinfo.proto": "client_server_appinfo.pb.go",
 	"steammessages_clientserver_friends.proto": "client_server_friends.pb.go",
 	"steammessages_clientserver_login.proto":   "client_server_login.pb.go",
 	"steammessages_sitelicenseclient.proto":    "client_site_license.pb.go",
-	"steammessages_clientserver_appinfo.proto": "client_server_appinfo.pb.go",
 
 	"content_manifest.proto": "content_manifest.pb.go",
 
@@ -127,7 +127,7 @@ var clientProtoFiles = map[string]string{
 	"steammessages_client_objects.proto":                "unified/client_objects.pb.go",
 	"steammessages_cloud.steamclient.proto":             "unified/cloud.pb.go",
 	"steammessages_credentials.steamclient.proto":       "unified/credentials.pb.go",
-	"steammessages_deviceauth.steamclient.proto":        "unified/deviceauth.pb.go",
+	// "steammessages_deviceauth.steamclient.proto":        "unified/deviceauth.pb.go",
 	"steammessages_gamenotifications.steamclient.proto": "unified/gamenotifications.pb.go",
 	"steammessages_offline.steamclient.proto":           "unified/offline.pb.go",
 	"steammessages_parental.steamclient.proto":          "unified/parental.pb.go",
@@ -142,11 +142,6 @@ var clientUnifiedExtraProtoFiles = map[string]string{
 	"steammessages_base.proto": "unified/mbase.pb.go",
 	"offline_ticket.proto":     "unified/offline_ticket.pb.go",
 }
-
-// var webuiProtoFiles = map[string]string{
-// 	"common.proto":      "common.pb.go",
-// 	"common_base.proto": "common_base.pb.go",
-// }
 
 var tf2ProtoFiles = map[string]string{
 	"base_gcmessages.proto":  "base.pb.go",
