@@ -121,6 +121,7 @@ func (a *Auth) handleLogOnResponse(packet *protocol.Packet) {
 	if result == steamlang.EResult_OK {
 		atomic.StoreInt32(&a.client.sessionId, msg.Header.Proto.GetClientSessionid())
 		atomic.StoreUint64(&a.client.steamId, msg.Header.Proto.GetSteamid())
+		a.client.isLoggedIn.Store(true)
 
 		go a.client.heartbeatLoop(time.Duration(body.GetHeartbeatSeconds()))
 
@@ -176,6 +177,13 @@ func (a *Auth) handleLoggedOff(packet *protocol.Packet) {
 		packet.ReadClientMsg(body)
 		result = body.Result
 	}
+
+	// Remove user data.
+	atomic.StoreInt32(&a.client.sessionId, 0)
+	atomic.StoreUint64(&a.client.steamId, 0)
+	
+	a.client.isLoggedIn.Store(false)
+
 	a.client.Emit(&LoggedOffEvent{Result: result})
 }
 

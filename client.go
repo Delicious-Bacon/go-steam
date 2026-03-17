@@ -36,6 +36,7 @@ type Client struct {
 	steamId      uint64
 	currentJobId uint64
 
+	isLoggedIn    atomic.Bool
 	Auth          *Auth
 	Social        *Social
 	Web           *Web
@@ -147,6 +148,10 @@ func (c *Client) Connected() bool {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 	return c.conn != nil
+}
+
+func (c *Client) IsLoggedIn() bool {
+	return c.isLoggedIn.Load()
 }
 
 // SetProxyDialer to use for Steam connections
