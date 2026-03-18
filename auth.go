@@ -150,7 +150,6 @@ func (a *Auth) handleLogOnResponse(packet *protocol.Packet) {
 		a.client.Emit(&LogOnFailedEvent{
 			Result: steamlang.EResult(body.GetEresult()),
 		})
-		a.client.Disconnect()
 	}
 }
 
@@ -181,7 +180,7 @@ func (a *Auth) handleLoggedOff(packet *protocol.Packet) {
 	// Remove user data.
 	atomic.StoreInt32(&a.client.sessionId, 0)
 	atomic.StoreUint64(&a.client.steamId, 0)
-	
+
 	a.client.isLoggedIn.Store(false)
 
 	a.client.Emit(&LoggedOffEvent{Result: result})

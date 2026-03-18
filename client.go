@@ -3,6 +3,7 @@ package steam
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
@@ -61,6 +62,9 @@ type Client struct {
 	heartbeat *time.Ticker
 
 	proxyDialer *proxy.Dialer
+
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 type PacketHandler interface {
@@ -109,7 +113,6 @@ func (c *Client) Emit(event interface{}) {
 // Emits a FatalErrorEvent formatted with fmt.Errorf and disconnects.
 func (c *Client) Fatalf(format string, a ...interface{}) {
 	c.Emit(FatalErrorEvent(fmt.Errorf(format, a...)))
-	c.Disconnect()
 }
 
 // Emits an error formatted with fmt.Errorf.
@@ -200,40 +203,58 @@ func (c *Client) ConnectToBind(addr *netutil.PortAddr, local *net.TCPAddr) error
 
 	conn, err := dialTCP(c.proxyDialer, local, addr.ToTCPAddr())
 	if err != nil {
-		c.Fatalf("Connect failed: %v", err)
+		c.Fatalf("dialTCP during connect failed: %v", err)
 		return err
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	c.mutex.Lock()
 	c.conn = conn
 	c.writeChan = make(chan protocol.IMsg, 5)
+	c.ctx = ctx
+	c.cancel = cancel
+	c.mutex.Unlock()
 
-	go c.readLoop()
-	go c.writeLoop()
+	go c.readLoop(ctx)
+	go c.writeLoop(ctx)
 
 	return nil
 }
 
 func (c *Client) Disconnect() {
-	if c.Connected() {
-		// Gracefully logout, we know we have a connection
-		c.Write(protocol.NewClientMsgProtobuf(steamlang.EMsg_ClientLogOff, new(protobuf.CMsgClientLogOff)))
-		time.Sleep(time.Second * 3)
-	}
 
 	c.mutex.Lock()
-	defer c.mutex.Unlock()
 
 	if c.conn == nil {
+		// Not connected.
+		c.mutex.Unlock()
 		return
 	}
 
+	// Send logout to Steam.
+	c.Write(protocol.NewClientMsgProtobuf(steamlang.EMsg_ClientLogOff, new(protobuf.CMsgClientLogOff)))
+
 	c.conn.Close()
 	c.conn = nil
+
 	if c.heartbeat != nil {
 		c.heartbeat.Stop()
+		c.heartbeat = nil
 	}
-	close(c.writeChan)
-	c.Emit(&DisconnectedEvent{})
+	if c.cancel != nil {
+		c.cancel() // kills the read/write loops
+	}
 
+	// Ensure we remove user data.
+	c.isLoggedIn.Store(false)
+
+	atomic.StoreUint64(&c.steamId, 0)
+	atomic.StoreInt32(&c.sessionId, 0)
+
+	c.mutex.Unlock()
+
+	c.Emit(&DisconnectedEvent{})
 }
 
 // Adds a message to the send queue. Modifications to the given message after
@@ -245,60 +266,92 @@ func (c *Client) Write(msg protocol.IMsg) {
 		cm.SetSessionId(c.SessionId())
 		cm.SetSteamId(c.SteamId())
 	}
+
 	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-	if c.conn == nil {
+	ch := c.writeChan
+	connAlive := c.conn != nil
+	c.mutex.RUnlock()
+
+	if !connAlive || ch == nil {
 		return
 	}
-	c.writeChan <- msg
-}
 
-func (c *Client) readLoop() {
-	for {
-		// This *should* be atomic on most platforms, but the Go spec doesn't guarantee it
-		c.mutex.RLock()
-		conn := c.conn
-		c.mutex.RUnlock()
-		if conn == nil {
-			return
-		}
-		packet, err := conn.Read()
+	select {
+	case ch <- msg:
+		// success
+	default:
+		// IMPORTANT: avoids blocking forever
 
-		if err != nil {
-			c.Fatalf("Error reading from the connection: %v", err)
-			return
-		}
-		c.handlePacket(packet)
+		c.Fatalf("could not write to the send queue, dropping message: %v", msg.GetMsgType())
 	}
 }
 
-func (c *Client) writeLoop() {
+func (c *Client) readLoop(ctx context.Context) {
 	for {
-		c.mutex.RLock()
-		conn := c.conn
-		c.mutex.RUnlock()
-		if conn == nil {
+		select {
+		case <-ctx.Done():
 			return
-		}
 
-		msg, ok := <-c.writeChan
-		if !ok {
-			return
-		}
+		default:
+			c.mutex.RLock()
+			conn := c.conn
+			c.mutex.RUnlock()
 
-		err := msg.Serialize(c.writeBuf)
-		if err != nil {
+			if conn == nil {
+				return
+			}
+
+			err := conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+			if err != nil {
+				c.Fatalf("error setting read deadline: %v", err)
+				return
+			}
+
+			packet, err := conn.Read()
+			if err != nil {
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					// expected → just retry loop
+					continue
+				}
+
+				c.Fatalf("error reading from the connection: %v", err)
+				return
+			}
+
+			c.handlePacket(packet)
+		}
+	}
+}
+
+func (c *Client) writeLoop(ctx context.Context) {
+	for {
+		select {
+		case msg := <-c.writeChan:
+
+			c.mutex.RLock()
+			conn := c.conn
+			c.mutex.RUnlock()
+
+			if conn == nil {
+				return
+			}
+
+			err := msg.Serialize(c.writeBuf)
+			if err != nil {
+				c.writeBuf.Reset()
+				c.Fatalf("serialize message error: %v", err)
+				return
+			}
+
+			err = conn.Write(c.writeBuf.Bytes())
 			c.writeBuf.Reset()
-			c.Fatalf("Error serializing message %v: %v", msg, err)
-			return
-		}
 
-		err = conn.Write(c.writeBuf.Bytes())
+			if err != nil {
+				c.Fatalf("write error: %v", err)
+				return
+			}
 
-		c.writeBuf.Reset()
-
-		if err != nil {
-			c.Fatalf("Error writing message %v: %v", msg, err)
+		case <-ctx.Done():
 			return
 		}
 	}
@@ -360,7 +413,7 @@ func (c *Client) handleChannelEncryptRequest(packet *protocol.Packet) {
 	packet.ReadMsg(body)
 
 	if body.Universe != steamlang.EUniverse_Public {
-		c.Fatalf("Invalid univserse %v!", body.Universe)
+		c.Fatalf("invalid univserse %v", body.Universe)
 	}
 
 	c.tempSessionKey = make([]byte, 32)
@@ -383,7 +436,7 @@ func (c *Client) handleChannelEncryptResult(packet *protocol.Packet) {
 	packet.ReadMsg(body)
 
 	if body.Result != steamlang.EResult_OK {
-		c.Fatalf("Encryption failed: %v", body.Result)
+		c.Fatalf("encryption failed: %v", body.Result)
 		return
 	}
 	c.conn.SetEncryptionKey(c.tempSessionKey)
@@ -401,13 +454,13 @@ func (c *Client) handleMulti(packet *protocol.Packet) {
 	if body.GetSizeUnzipped() > 0 {
 		r, err := gzip.NewReader(bytes.NewReader(payload))
 		if err != nil {
-			c.Errorf("handleMulti: Error while decompressing: %v", err)
+			c.Errorf("handleMulti: error while decompressing: %v", err)
 			return
 		}
 
 		payload, err = io.ReadAll(r)
 		if err != nil {
-			c.Errorf("handleMulti: Error while decompressing: %v", err)
+			c.Errorf("handleMulti: error while decompressing: %v", err)
 			return
 		}
 	}
@@ -420,7 +473,7 @@ func (c *Client) handleMulti(packet *protocol.Packet) {
 		pr.Read(packetData)
 		p, err := protocol.NewPacket(packetData)
 		if err != nil {
-			c.Errorf("Error reading packet in Multi msg %v: %v", packet, err)
+			c.Errorf("error reading packet in Multi msg %v: %v", packet, err)
 			continue
 		}
 		c.handlePacket(p)

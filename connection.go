@@ -5,15 +5,18 @@ import (
 	"crypto/cipher"
 	"encoding/binary"
 	"fmt"
-	"github.com/Philipp15b/go-steam/v3/cryptoutil"
-	"github.com/Philipp15b/go-steam/v3/protocol"
-	"golang.org/x/net/proxy"
 	"io"
 	"net"
 	"sync"
+	"time"
+
+	"github.com/Philipp15b/go-steam/v3/cryptoutil"
+	"github.com/Philipp15b/go-steam/v3/protocol"
+	"golang.org/x/net/proxy"
 )
 
 type connection interface {
+	SetReadDeadline(time.Time) error
 	Read() (*protocol.Packet, error)
 	Write([]byte) error
 	Close() error
@@ -27,6 +30,10 @@ type tcpConnection struct {
 	conn        *net.TCPConn
 	ciph        cipher.Block
 	cipherMutex sync.RWMutex
+}
+
+func (c *tcpConnection) SetReadDeadline(t time.Time) error {
+	return c.conn.SetReadDeadline(t)
 }
 
 // dialTCP with an optional proxy dialer

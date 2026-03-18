@@ -40,7 +40,7 @@ func (g *GameCoordinator) HandlePacket(packet *protocol.Packet) {
 
 	p, err := gamecoordinator.NewGCPacket(msg)
 	if err != nil {
-		g.client.Errorf("Error reading GC message: %v", err)
+		g.client.Errorf("error reading GC message: %v", err)
 		return
 	}
 
