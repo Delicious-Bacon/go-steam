@@ -211,9 +211,6 @@ func (c *Client) ConnectToBind(addr *netutil.PortAddr, local *net.TCPAddr) error
 
 	c.mutex.Lock()
 	c.conn = conn
-	if oldCh := c.writeChan; oldCh != nil {
-		close(oldCh)
-	}
 	c.writeChan = make(chan protocol.IMsg, 5)
 	c.ctx = ctx
 	c.cancel = cancel
@@ -242,9 +239,6 @@ func (c *Client) Disconnect() {
 
 	if c.cancel != nil {
 		c.cancel() // kills the read/write loops
-	}
-	if c.writeChan != nil {
-		close(c.writeChan)
 	}
 
 	// Ensure we remove user data.
