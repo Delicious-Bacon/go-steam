@@ -113,6 +113,7 @@ func (c *Client) Emit(event interface{}) {
 // Emits a FatalErrorEvent formatted with fmt.Errorf and disconnects.
 func (c *Client) Fatalf(format string, a ...interface{}) {
 	c.Emit(FatalErrorEvent(fmt.Errorf(format, a...)))
+	c.Disconnect()
 }
 
 // Emits an error formatted with fmt.Errorf.
@@ -211,6 +212,9 @@ func (c *Client) ConnectToBind(addr *netutil.PortAddr, local *net.TCPAddr) error
 
 	c.mutex.Lock()
 	c.conn = conn
+	if oldCh := c.writeChan; oldCh != nil {
+		close(oldCh)
+	}
 	c.writeChan = make(chan protocol.IMsg, 5)
 	c.ctx = ctx
 	c.cancel = cancel
@@ -225,15 +229,14 @@ func (c *Client) ConnectToBind(addr *netutil.PortAddr, local *net.TCPAddr) error
 func (c *Client) Disconnect() {
 
 	c.mutex.Lock()
+	defer func() {
+		c.mutex.Unlock()
+	}()
 
 	if c.conn == nil {
 		// Not connected.
-		c.mutex.Unlock()
 		return
 	}
-
-	// Send logout to Steam.
-	c.Write(protocol.NewClientMsgProtobuf(steamlang.EMsg_ClientLogOff, new(protobuf.CMsgClientLogOff)))
 
 	c.conn.Close()
 	c.conn = nil
@@ -245,14 +248,15 @@ func (c *Client) Disconnect() {
 	if c.cancel != nil {
 		c.cancel() // kills the read/write loops
 	}
+	if c.writeChan != nil {
+		close(c.writeChan)
+	}
 
 	// Ensure we remove user data.
 	c.isLoggedIn.Store(false)
 
 	atomic.StoreUint64(&c.steamId, 0)
 	atomic.StoreInt32(&c.sessionId, 0)
-
-	c.mutex.Unlock()
 
 	c.Emit(&DisconnectedEvent{})
 }
@@ -326,7 +330,10 @@ func (c *Client) readLoop(ctx context.Context) {
 func (c *Client) writeLoop(ctx context.Context) {
 	for {
 		select {
-		case msg := <-c.writeChan:
+		case msg, ok := <-c.writeChan:
+			if !ok {
+				return
+			}
 
 			c.mutex.RLock()
 			conn := c.conn
