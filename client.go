@@ -59,7 +59,6 @@ type Client struct {
 	conn      connection
 	writeChan chan protocol.IMsg
 	writeBuf  *bytes.Buffer
-	heartbeat *time.Ticker
 
 	proxyDialer *proxy.Dialer
 
@@ -241,10 +240,6 @@ func (c *Client) Disconnect() {
 	c.conn.Close()
 	c.conn = nil
 
-	if c.heartbeat != nil {
-		c.heartbeat.Stop()
-		c.heartbeat = nil
-	}
 	if c.cancel != nil {
 		c.cancel() // kills the read/write loops
 	}
@@ -364,28 +359,19 @@ func (c *Client) writeLoop(ctx context.Context) {
 	}
 }
 
-func (c *Client) heartbeatLoop(seconds time.Duration) {
-	if c.heartbeat != nil {
-		c.heartbeat.Stop()
-	}
-	c.heartbeat = time.NewTicker(seconds * time.Second)
-	defer func() {
-		c.heartbeat = nil
-	}()
+func (c *Client) heartbeatLoop(ctx context.Context, seconds time.Duration) {
+	ticker := time.NewTicker(seconds * time.Second)
+	defer ticker.Stop()
 
 	for {
-		if c.heartbeat == nil {
-			break
-		}
-
 		select {
-		case _, ok := <-c.heartbeat.C:
-			if !ok {
-				return
-			}
-			c.Write(protocol.NewClientMsgProtobuf(steamlang.EMsg_ClientHeartBeat, new(protobuf.CMsgClientHeartBeat)))
-		case <-time.After(5 * time.Minute):
-			// failed to get heartbeat tick after 5 minutes, returning early
+		case <-ticker.C:
+			c.Write(protocol.NewClientMsgProtobuf(
+				steamlang.EMsg_ClientHeartBeat,
+				new(protobuf.CMsgClientHeartBeat),
+			))
+
+		case <-ctx.Done():
 			return
 		}
 	}

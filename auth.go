@@ -123,7 +123,7 @@ func (a *Auth) handleLogOnResponse(packet *protocol.Packet) {
 		atomic.StoreUint64(&a.client.steamId, msg.Header.Proto.GetSteamid())
 		a.client.isLoggedIn.Store(true)
 
-		go a.client.heartbeatLoop(time.Duration(body.GetHeartbeatSeconds()))
+		go a.client.heartbeatLoop(a.client.ctx, time.Duration(body.GetHeartbeatSeconds()))
 
 		a.client.Emit(&LoggedOnEvent{
 			Result:                    steamlang.EResult(body.GetEresult()),
