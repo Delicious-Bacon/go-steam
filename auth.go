@@ -1,6 +1,8 @@
 package steam
 
 import (
+	"errors"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -9,6 +11,10 @@ import (
 	"github.com/Philipp15b/go-steam/v3/protocol/steamlang"
 	"github.com/Philipp15b/go-steam/v3/steamid"
 	"google.golang.org/protobuf/proto"
+)
+
+const (
+	AnonymousUser = "anonymous"
 )
 
 type Auth struct {
@@ -55,17 +61,22 @@ func (a *Auth) LogOn(details *LogOnDetails) {
 		panic("must set at least refresh token or the username/password")
 	}
 
+	username := details.Username
+	if strings.EqualFold(username, AnonymousUser) {
+		username = ""
+	}
+
 	logon := new(protobuf.CMsgClientLogon)
 	logon.ClientLanguage = proto.String("english")
 	logon.ProtocolVersion = proto.Uint32(steamlang.MsgClientLogon_CurrentProtocol)
-	logon.ClientOsType = proto.Uint32(20) // Windows 11
-	logon.ChatMode = proto.Uint32(2)      // New chat
+	logon.ClientOsType = proto.Uint32(uint32(steamlang.EOSType_Win11)) // Windows 11
+	logon.ChatMode = proto.Uint32(2)                                   // New chat
 
-	if details.Username != "" {
-		logon.AccountName = &details.Username
+	if username != "" {
+		logon.AccountName = proto.String(username)
 	}
 	if details.Password != "" {
-		logon.Password = &details.Password
+		logon.Password = proto.String(details.Password)
 	}
 	if details.AuthCode != "" {
 		logon.AuthCode = proto.String(details.AuthCode)
@@ -74,7 +85,7 @@ func (a *Auth) LogOn(details *LogOnDetails) {
 		logon.TwoFactorCode = proto.String(details.TwoFactorCode)
 	}
 	if details.RefreshToken != "" {
-		logon.AccessToken = &details.RefreshToken
+		logon.AccessToken = proto.String(details.RefreshToken)
 	}
 	if details.SentryFileHash != nil {
 		logon.ShaSentryfile = details.SentryFileHash
@@ -83,7 +94,10 @@ func (a *Auth) LogOn(details *LogOnDetails) {
 		logon.ShouldRememberPassword = proto.Bool(details.ShouldRememberPassword)
 	}
 
-	if details.SteamID != nil {
+	if username == "" {
+		// Anonymous login.
+		atomic.StoreUint64(&a.client.steamId, uint64(steamid.NewIdAdv(0, 1, int32(steamlang.EUniverse_Public), int32(steamlang.EAccountType_AnonUser))))
+	} else if details.SteamID != nil {
 		atomic.StoreUint64(&a.client.steamId, uint64(*details.SteamID))
 	} else {
 		atomic.StoreUint64(&a.client.steamId, uint64(steamid.NewIdAdv(0, 1, int32(steamlang.EUniverse_Public), int32(steamlang.EAccountType_Individual))))
@@ -111,7 +125,7 @@ func (a *Auth) HandlePacket(packet *protocol.Packet) {
 
 func (a *Auth) handleLogOnResponse(packet *protocol.Packet) {
 	if !packet.IsProto {
-		a.client.Fatalf("Got non-proto logon response!")
+		a.client.Fatalf(errors.New("got non-proto logon response!"))
 		return
 	}
 
