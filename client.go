@@ -35,6 +35,22 @@ const (
 	StateLoggedIn
 )
 
+var (
+	stateNames = map[ConnState]string{
+		StateDisconnected: "Disconnected",
+		StateConnecting:   "Connecting",
+		StateConnected:    "Connected",
+		StateLoggingIn:    "Logging in",
+		StateAwaiting2FA:  "Awaiting 2FA",
+		StateLoggedIn:     "Logged in",
+	}
+)
+
+// String returns a string representation of the connection state.
+func (s ConnState) String() string {
+	return stateNames[s]
+}
+
 // Represents a client to the Steam network.
 // Always poll events from the channel returned by Events() or receiving messages will stop.
 // All access, unless otherwise noted, should be threadsafe.
