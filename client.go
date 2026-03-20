@@ -24,6 +24,17 @@ import (
 	"github.com/Philipp15b/go-steam/v3/steamid"
 )
 
+type ConnState int
+
+const (
+	StateDisconnected ConnState = iota
+	StateConnecting
+	StateConnected
+	StateLoggingIn
+	StateAwaiting2FA
+	StateLoggedIn
+)
+
 // Represents a client to the Steam network.
 // Always poll events from the channel returned by Events() or receiving messages will stop.
 // All access, unless otherwise noted, should be threadsafe.
@@ -37,7 +48,6 @@ type Client struct {
 	steamId      uint64
 	currentJobId uint64
 
-	isLoggedIn    atomic.Bool
 	Auth          *Auth
 	Social        *Social
 	Web           *Web
@@ -64,6 +74,9 @@ type Client struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	state   ConnState
+	stateMu sync.RWMutex
 }
 
 type PacketHandler interface {
@@ -97,6 +110,20 @@ func NewClient() *Client {
 	client.jobHandlers = map[protocol.JobId]chan *protocol.Packet{}
 
 	return client
+}
+
+// setState sets the state of the client in a thread-safe way.
+func (c *Client) setState(s ConnState) {
+	c.stateMu.Lock()
+	c.state = s
+	c.stateMu.Unlock()
+}
+
+// State returns the current state of the client.
+func (c *Client) State() ConnState {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	return c.state
 }
 
 // Get the event channel. By convention all events are pointers, except for errors.
@@ -147,20 +174,10 @@ func (c *Client) SessionId() int32 {
 	return atomic.LoadInt32(&c.sessionId)
 }
 
-func (c *Client) Connected() bool {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-	return c.conn != nil
-}
-
-func (c *Client) IsLoggedIn() bool {
-	return c.isLoggedIn.Load()
-}
-
 // SetProxyDialer to use for Steam connections
 // Disconnects the connection if it is currently connected
 func (c *Client) SetProxyDialer(dialer *proxy.Dialer) {
-	if c.Connected() {
+	if c.State() > StateDisconnected {
 		c.Disconnect()
 	}
 
@@ -199,7 +216,12 @@ func (c *Client) ConnectTo(addr *netutil.PortAddr) error {
 // Connects to a specific server, and binds to a specified local IP
 // If this client is already connected, it is disconnected first.
 func (c *Client) ConnectToBind(addr *netutil.PortAddr, local *net.TCPAddr) error {
-	c.Disconnect()
+	if c.State() > StateDisconnected {
+
+		c.Disconnect()
+	}
+
+	c.setState(StateConnecting)
 
 	conn, err := dialTCP(c.proxyDialer, local, addr.ToTCPAddr())
 	if err != nil {
@@ -229,6 +251,8 @@ func (c *Client) Disconnect() {
 		c.mutex.Unlock()
 	}()
 
+	c.setState(StateDisconnected)
+
 	if c.conn == nil {
 		// Not connected.
 		return
@@ -242,7 +266,6 @@ func (c *Client) Disconnect() {
 	}
 
 	// Ensure we remove user data.
-	c.isLoggedIn.Store(false)
 
 	atomic.StoreUint64(&c.steamId, 0)
 	atomic.StoreInt32(&c.sessionId, 0)
@@ -429,6 +452,7 @@ func (c *Client) handleChannelEncryptResult(packet *protocol.Packet) {
 	c.conn.SetEncryptionKey(c.tempSessionKey)
 	c.tempSessionKey = nil
 
+	c.setState(StateConnected)
 	c.Emit(&ConnectedEvent{})
 }
 

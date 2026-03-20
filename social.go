@@ -241,7 +241,7 @@ func (s *Social) HandlePacket(packet *protocol.Packet) {
 	}
 }
 
-func (s *Social) handleAccountInfo(packet *protocol.Packet) {
+func (s *Social) handleAccountInfo(_ *protocol.Packet) {
 	// Just fire the personainfo, Auth handles the callback
 	flags := steamlang.EClientPersonaStateFlag_PlayerName | steamlang.EClientPersonaStateFlag_Presence | steamlang.EClientPersonaStateFlag_SourceID
 	s.RequestFriendInfo(s.client.SteamId(), steamlang.EClientPersonaStateFlag(flags))
@@ -508,17 +508,20 @@ func (s *Social) handleChatMemberInfo(packet *protocol.Packet) {
 		actedBy, _ := rwu.ReadUint64(reader)
 		rwu.ReadByte(reader) // 0
 		stateChange := steamlang.EChatMemberStateChange(state)
-		if stateChange == steamlang.EChatMemberStateChange_Entered {
+		switch stateChange {
+
+		case steamlang.EChatMemberStateChange_Entered:
 			_, chatPerm, clanPerm := readChatMember(reader)
 			s.Chats.AddChatMember(chatId, socialcache.ChatMember{
 				SteamId:         steamid.SteamId(actedOn),
 				ChatPermissions: chatPerm,
 				ClanPermissions: clanPerm,
 			})
-		} else if stateChange == steamlang.EChatMemberStateChange_Banned || stateChange == steamlang.EChatMemberStateChange_Kicked ||
-			stateChange == steamlang.EChatMemberStateChange_Disconnected || stateChange == steamlang.EChatMemberStateChange_Left {
+
+		case steamlang.EChatMemberStateChange_Banned, steamlang.EChatMemberStateChange_Kicked, steamlang.EChatMemberStateChange_Disconnected, steamlang.EChatMemberStateChange_Left:
 			s.Chats.RemoveChatMember(chatId, steamid.SteamId(actedOn))
 		}
+		
 		stateInfo := StateChangeDetails{
 			ChatterActedOn: steamid.SteamId(actedOn),
 			StateChange:    steamlang.EChatMemberStateChange(stateChange),

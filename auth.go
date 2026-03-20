@@ -89,6 +89,7 @@ func (a *Auth) LogOn(details *LogOnDetails) {
 		atomic.StoreUint64(&a.client.steamId, uint64(steamid.NewIdAdv(0, 1, int32(steamlang.EUniverse_Public), int32(steamlang.EAccountType_Individual))))
 	}
 
+	a.client.setState(StateLoggingIn)
 	a.client.Write(protocol.NewClientMsgProtobuf(steamlang.EMsg_ClientLogon, logon))
 }
 
@@ -118,10 +119,13 @@ func (a *Auth) handleLogOnResponse(packet *protocol.Packet) {
 	msg := packet.ReadProtoMsg(body)
 
 	result := steamlang.EResult(body.GetEresult())
-	if result == steamlang.EResult_OK {
+	switch result {
+
+	case steamlang.EResult_OK:
 		atomic.StoreInt32(&a.client.sessionId, msg.Header.Proto.GetClientSessionid())
 		atomic.StoreUint64(&a.client.steamId, msg.Header.Proto.GetSteamid())
-		a.client.isLoggedIn.Store(true)
+
+		a.client.setState(StateLoggedIn)
 
 		go a.client.heartbeatLoop(a.client.ctx, time.Duration(body.GetHeartbeatSeconds()))
 
@@ -144,9 +148,13 @@ func (a *Auth) handleLogOnResponse(packet *protocol.Packet) {
 			NumLoginFailuresToMigrate: body.GetCountLoginfailuresToMigrate(),
 			NumDisconnectsToMigrate:   body.GetCountDisconnectsToMigrate(),
 		})
-	} else if result == steamlang.EResult_Fail || result == steamlang.EResult_ServiceUnavailable || result == steamlang.EResult_TryAnotherCM {
+
+	case steamlang.EResult_Fail, steamlang.EResult_ServiceUnavailable, steamlang.EResult_TryAnotherCM:
 		// some error on Steam's side, we'll get an EOF later
-	} else {
+
+	default:
+		a.client.setState(StateAwaiting2FA)
+
 		a.client.Emit(&LogOnFailedEvent{
 			Result: steamlang.EResult(body.GetEresult()),
 		})
@@ -180,8 +188,6 @@ func (a *Auth) handleLoggedOff(packet *protocol.Packet) {
 	// Remove user data.
 	atomic.StoreInt32(&a.client.sessionId, 0)
 	atomic.StoreUint64(&a.client.steamId, 0)
-
-	a.client.isLoggedIn.Store(false)
 
 	a.client.Emit(&LoggedOffEvent{Result: result})
 }
