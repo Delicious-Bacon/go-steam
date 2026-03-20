@@ -79,8 +79,6 @@ type Client struct {
 	jobHandlers      map[protocol.JobId]chan *protocol.Packet
 	tempSessionKey   []byte
 
-	ConnectionTimeout time.Duration
-
 	mutex     sync.RWMutex // guarding conn and writeChan
 	conn      connection
 	writeChan chan protocol.IMsg
@@ -92,7 +90,7 @@ type Client struct {
 	cancel context.CancelFunc
 
 	state   ConnState
-	stateMu sync.RWMutex
+	stateMu sync.Mutex
 }
 
 type PacketHandler interface {
@@ -137,8 +135,8 @@ func (c *Client) setState(s ConnState) {
 
 // State returns the current state of the client.
 func (c *Client) State() ConnState {
-	c.stateMu.RLock()
-	defer c.stateMu.RUnlock()
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
 	return c.state
 }
 
@@ -153,14 +151,14 @@ func (c *Client) Emit(event interface{}) {
 }
 
 // Emits a FatalErrorEvent formatted with fmt.Errorf and disconnects.
-func (c *Client) Fatalf(format string, a ...interface{}) {
-	c.Emit(FatalErrorEvent(fmt.Errorf(format, a...)))
+func (c *Client) Fatalf(err error) {
+	c.Emit(FatalErrorEvent(err))
 	c.Disconnect()
 }
 
 // Emits an error formatted with fmt.Errorf.
-func (c *Client) Errorf(format string, a ...interface{}) {
-	c.Emit(fmt.Errorf(format, a...))
+func (c *Client) Errorf(err error) {
+	c.Emit(err)
 }
 
 // Registers a PacketHandler that receives all incoming packets.
@@ -241,7 +239,7 @@ func (c *Client) ConnectToBind(addr *netutil.PortAddr, local *net.TCPAddr) error
 
 	conn, err := dialTCP(c.proxyDialer, local, addr.ToTCPAddr())
 	if err != nil {
-		c.Fatalf("dialTCP during connect failed: %v", err)
+		c.Fatalf(fmt.Errorf("dialTCP during connect failed: %w", err))
 		return err
 	}
 
@@ -281,11 +279,6 @@ func (c *Client) Disconnect() {
 		c.cancel() // kills the read/write loops
 	}
 
-	// Ensure we remove user data.
-
-	atomic.StoreUint64(&c.steamId, 0)
-	atomic.StoreInt32(&c.sessionId, 0)
-
 	c.Emit(&DisconnectedEvent{})
 }
 
@@ -314,7 +307,7 @@ func (c *Client) Write(msg protocol.IMsg) {
 	default:
 		// IMPORTANT: avoids blocking forever
 
-		c.Fatalf("could not write to the send queue, dropping message: %v", msg.GetMsgType())
+		c.Fatalf(fmt.Errorf("could not write to the send queue, dropping message: %v", msg.GetMsgType()))
 	}
 }
 
@@ -335,7 +328,7 @@ func (c *Client) readLoop(ctx context.Context) {
 
 			err := conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 			if err != nil {
-				c.Fatalf("error setting read deadline: %v", err)
+				c.Fatalf(fmt.Errorf("error setting read deadline: %w", err))
 				return
 			}
 
@@ -346,7 +339,7 @@ func (c *Client) readLoop(ctx context.Context) {
 					continue
 				}
 
-				c.Fatalf("error reading from the connection: %v", err)
+				c.Fatalf(fmt.Errorf("error reading from the connection: %w", err))
 				return
 			}
 
@@ -374,7 +367,7 @@ func (c *Client) writeLoop(ctx context.Context) {
 			err := msg.Serialize(c.writeBuf)
 			if err != nil {
 				c.writeBuf.Reset()
-				c.Fatalf("serialize message error: %v", err)
+				c.Fatalf(fmt.Errorf("serialize message error: %w", err))
 				return
 			}
 
@@ -382,7 +375,7 @@ func (c *Client) writeLoop(ctx context.Context) {
 			c.writeBuf.Reset()
 
 			if err != nil {
-				c.Fatalf("write error: %v", err)
+				c.Fatalf(fmt.Errorf("write error: %w", err))
 				return
 			}
 
@@ -439,7 +432,7 @@ func (c *Client) handleChannelEncryptRequest(packet *protocol.Packet) {
 	packet.ReadMsg(body)
 
 	if body.Universe != steamlang.EUniverse_Public {
-		c.Fatalf("invalid univserse %v", body.Universe)
+		c.Fatalf(fmt.Errorf("invalid univserse %v", body.Universe))
 	}
 
 	c.tempSessionKey = make([]byte, 32)
@@ -462,7 +455,7 @@ func (c *Client) handleChannelEncryptResult(packet *protocol.Packet) {
 	packet.ReadMsg(body)
 
 	if body.Result != steamlang.EResult_OK {
-		c.Fatalf("encryption failed: %v", body.Result)
+		c.Fatalf(fmt.Errorf("encryption failed: %v", body.Result))
 		return
 	}
 	c.conn.SetEncryptionKey(c.tempSessionKey)
@@ -481,13 +474,13 @@ func (c *Client) handleMulti(packet *protocol.Packet) {
 	if body.GetSizeUnzipped() > 0 {
 		r, err := gzip.NewReader(bytes.NewReader(payload))
 		if err != nil {
-			c.Errorf("handleMulti: error while decompressing: %v", err)
+			c.Errorf(fmt.Errorf("handleMulti: error while decompressing: %w", err))
 			return
 		}
 
 		payload, err = io.ReadAll(r)
 		if err != nil {
-			c.Errorf("handleMulti: error while decompressing: %v", err)
+			c.Errorf(fmt.Errorf("handleMulti: error while decompressing: %w", err))
 			return
 		}
 	}
@@ -500,7 +493,7 @@ func (c *Client) handleMulti(packet *protocol.Packet) {
 		pr.Read(packetData)
 		p, err := protocol.NewPacket(packetData)
 		if err != nil {
-			c.Errorf("error reading packet in Multi msg %v: %v", packet, err)
+			c.Errorf(fmt.Errorf("error reading packet in Multi msg %v: %w", packet, err))
 			continue
 		}
 		c.handlePacket(p)

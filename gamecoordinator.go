@@ -2,6 +2,7 @@ package steam
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/Philipp15b/go-steam/v3/protocol"
 	"github.com/Philipp15b/go-steam/v3/protocol/gamecoordinator"
@@ -40,7 +41,7 @@ func (g *GameCoordinator) HandlePacket(packet *protocol.Packet) {
 
 	p, err := gamecoordinator.NewGCPacket(msg)
 	if err != nil {
-		g.client.Errorf("error reading GC message: %v", err)
+		g.client.Errorf(fmt.Errorf("error reading GC message: %w", err))
 		return
 	}
 
