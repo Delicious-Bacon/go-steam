@@ -31,6 +31,8 @@ const (
 	StateConnecting
 	StateConnected
 	StateLoggingIn
+	StateLoginFailed
+	StateLoginBlocked
 	StateAwaiting2FA
 	StateLoggedIn
 )
@@ -42,6 +44,7 @@ var (
 		StateConnected:    "Connected",
 		StateLoggingIn:    "Logging in",
 		StateAwaiting2FA:  "Awaiting 2FA",
+		StateLoginFailed:  "Login failed",
 		StateLoggedIn:     "Logged in",
 	}
 )
@@ -150,13 +153,13 @@ func (c *Client) Emit(event interface{}) {
 	c.events <- event
 }
 
-// Emits a FatalErrorEvent formatted with fmt.Errorf and disconnects.
+// Emits a FatalErrorEvent and disconnects.
 func (c *Client) Fatalf(err error) {
 	c.Emit(FatalErrorEvent(err))
-	c.Disconnect()
+	c.disconnect(false)
 }
 
-// Emits an error formatted with fmt.Errorf.
+// Emits an error.
 func (c *Client) Errorf(err error) {
 	c.Emit(err)
 }
@@ -192,7 +195,7 @@ func (c *Client) SessionId() int32 {
 // Disconnects the connection if it is currently connected
 func (c *Client) SetProxyDialer(dialer *proxy.Dialer) {
 	if c.State() > StateDisconnected {
-		c.Disconnect()
+		c.disconnect(false)
 	}
 
 	c.proxyDialer = dialer
@@ -232,7 +235,7 @@ func (c *Client) ConnectTo(addr *netutil.PortAddr) error {
 func (c *Client) ConnectToBind(addr *netutil.PortAddr, local *net.TCPAddr) error {
 	if c.State() > StateDisconnected {
 
-		c.Disconnect()
+		c.disconnect(false)
 	}
 
 	c.setState(StateConnecting)
@@ -258,14 +261,24 @@ func (c *Client) ConnectToBind(addr *netutil.PortAddr, local *net.TCPAddr) error
 	return nil
 }
 
+// Disconnect disconnects the client from the server and
+// sets the state to `StateDisconnected`.
 func (c *Client) Disconnect() {
+
+	c.disconnect(false)
+}
+
+func (c *Client) disconnect(loggingIn bool) {
 
 	c.mutex.Lock()
 	defer func() {
 		c.mutex.Unlock()
 	}()
 
-	c.setState(StateDisconnected)
+	if !loggingIn {
+		// We're not logging in, so reset state to default.
+		c.setState(StateDisconnected)
+	}
 
 	if c.conn == nil {
 		// Not connected.
@@ -279,7 +292,9 @@ func (c *Client) Disconnect() {
 		c.cancel() // kills the read/write loops
 	}
 
-	c.Emit(&DisconnectedEvent{})
+	c.Emit(&DisconnectedEvent{
+		OnLoginFlow: loggingIn,
+	})
 }
 
 // Adds a message to the send queue. Modifications to the given message after
@@ -498,13 +513,4 @@ func (c *Client) handleMulti(packet *protocol.Packet) {
 		}
 		c.handlePacket(p)
 	}
-}
-
-func readIp(ip uint32) net.IP {
-	r := make(net.IP, 4)
-	r[3] = byte(ip)
-	r[2] = byte(ip >> 8)
-	r[1] = byte(ip >> 16)
-	r[0] = byte(ip >> 24)
-	return r
 }

@@ -1,6 +1,8 @@
 package steam
 
 import (
+	"time"
+
 	"github.com/Philipp15b/go-steam/v3/protocol/steamlang"
 	"github.com/Philipp15b/go-steam/v3/steamid"
 )
@@ -26,7 +28,8 @@ type LoggedOnEvent struct {
 }
 
 type LogOnFailedEvent struct {
-	Result steamlang.EResult
+	Result   steamlang.EResult
+	WaitTime time.Duration
 }
 
 type LoginKeyEvent struct {

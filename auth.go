@@ -2,7 +2,6 @@ package steam
 
 import (
 	"errors"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -13,9 +12,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const (
-	AnonymousUser = "anonymous"
-)
+// This package is implicitly owned by anonymous users. They don't receive a license list, and should instead just
+// automatically assume that they own package 17906 (and no others, including 0).
+// https://steamdb.info/sub/17906/
+const ANONYMOUS_DEDICATED_SERVER_COMP = 17906
 
 type Auth struct {
 	client  *Client
@@ -25,6 +25,8 @@ type Auth struct {
 type SentryHash []byte
 
 type LogOnDetails struct {
+	AsAnonymousUser bool // True if you're logging in as an anonymous user.
+
 	Username string
 
 	// If logging into an account without a login key, the account's password.
@@ -57,50 +59,70 @@ type LogOnDetails struct {
 // If you don't use Steam Guard, username and password are enough for the first login. Subsequent logins will
 // require a refresh token OR sentry (if it has Steam Guard disabled)
 func (a *Auth) LogOn(details *LogOnDetails) {
-	if details.Username == "" && details.Password == "" && details.RefreshToken == "" {
-		panic("must set at least refresh token or the username/password")
-	}
-
-	username := details.Username
-	if strings.EqualFold(username, AnonymousUser) {
-		username = ""
+	if details.Username == "" && details.Password == "" && details.RefreshToken == "" && !details.AsAnonymousUser {
+		a.client.Fatalf(errors.New("invalid LogOnDetails: missing username, password or refresh token, and not an anonymous login"))
+		return
 	}
 
 	logon := new(protobuf.CMsgClientLogon)
 	logon.ClientLanguage = proto.String("english")
+	logon.ClientPackageVersion = proto.Uint32(uint32(1561159470)) // Not needed?
 	logon.ProtocolVersion = proto.Uint32(steamlang.MsgClientLogon_CurrentProtocol)
 	logon.ClientOsType = proto.Uint32(uint32(steamlang.EOSType_Win11)) // Windows 11
 	logon.ChatMode = proto.Uint32(2)                                   // New chat
+	logon.SupportsRateLimitResponse = proto.Bool(true)
 
-	if username != "" {
-		logon.AccountName = proto.String(username)
-	}
-	if details.Password != "" {
-		logon.Password = proto.String(details.Password)
-	}
-	if details.AuthCode != "" {
-		logon.AuthCode = proto.String(details.AuthCode)
-	}
-	if details.TwoFactorCode != "" {
-		logon.TwoFactorCode = proto.String(details.TwoFactorCode)
-	}
-	if details.RefreshToken != "" {
-		logon.AccessToken = proto.String(details.RefreshToken)
-	}
-	if details.SentryFileHash != nil {
-		logon.ShaSentryfile = details.SentryFileHash
-	}
-	if details.ShouldRememberPassword {
-		logon.ShouldRememberPassword = proto.Bool(details.ShouldRememberPassword)
+	if !details.AsAnonymousUser {
+		if details.Username != "" {
+			logon.AccountName = proto.String(details.Username)
+		}
+		if details.Password != "" {
+			logon.Password = proto.String(details.Password)
+		}
+		if details.AuthCode != "" {
+			logon.AuthCode = proto.String(details.AuthCode)
+		}
+		if details.TwoFactorCode != "" {
+			logon.TwoFactorCode = proto.String(details.TwoFactorCode)
+		}
+		if details.RefreshToken != "" {
+			logon.AccessToken = proto.String(details.RefreshToken)
+		}
+		if details.SentryFileHash != nil {
+			logon.ShaSentryfile = details.SentryFileHash
+		}
+		if details.ShouldRememberPassword {
+			logon.ShouldRememberPassword = proto.Bool(details.ShouldRememberPassword)
+		}
 	}
 
-	if username == "" {
+	if details.AsAnonymousUser {
 		// Anonymous login.
-		atomic.StoreUint64(&a.client.steamId, uint64(steamid.NewIdAdv(0, 1, int32(steamlang.EUniverse_Public), int32(steamlang.EAccountType_AnonUser))))
+		atomic.StoreUint64(
+			&a.client.steamId,
+			uint64(
+				steamid.NewIdAdv(
+					0,                                      // account ID
+					0,                                      // instance ID
+					int32(steamlang.EUniverse_Public),      // universe
+					int32(steamlang.EAccountType_AnonUser), // account type
+				),
+			),
+		)
 	} else if details.SteamID != nil {
 		atomic.StoreUint64(&a.client.steamId, uint64(*details.SteamID))
 	} else {
-		atomic.StoreUint64(&a.client.steamId, uint64(steamid.NewIdAdv(0, 1, int32(steamlang.EUniverse_Public), int32(steamlang.EAccountType_Individual))))
+		atomic.StoreUint64(
+			&a.client.steamId,
+			uint64(
+				steamid.NewIdAdv(
+					0,                                        // account ID
+					1,                                        // instance ID
+					int32(steamlang.EUniverse_Public),        // universe
+					int32(steamlang.EAccountType_Individual), // account type
+				),
+			),
+		)
 	}
 
 	a.client.setState(StateLoggingIn)
@@ -163,14 +185,37 @@ func (a *Auth) handleLogOnResponse(packet *protocol.Packet) {
 			NumDisconnectsToMigrate:   body.GetCountDisconnectsToMigrate(),
 		})
 
-	case steamlang.EResult_Fail, steamlang.EResult_ServiceUnavailable, steamlang.EResult_TryAnotherCM:
-		// some error on Steam's side, we'll get an EOF later
-
+	// case steamlang.EResult_Fail, steamlang.EResult_ServiceUnavailable, steamlang.EResult_TryAnotherCM:
+	// some error on Steam's side, we'll get an EOF later
+	// a.client.Disconnect()
 	default:
-		a.client.setState(StateAwaiting2FA)
+		a.client.disconnect(true)
+
+		var waitTime = time.Duration(0)
+
+		switch result {
+		case steamlang.EResult_AccountLogonDenied, steamlang.EResult_AccountLoginDeniedNeedTwoFactor:
+			// Wait for 2FA.
+			a.client.setState(StateAwaiting2FA)
+
+		case steamlang.EResult_InvalidPassword, steamlang.EResult_UnexpectedError:
+			// We got blocked from too many failed login attempts.
+			a.client.setState(StateLoginBlocked)
+			waitTime = time.Minute * 15
+
+		default:
+
+			// Something failed, we need to fully reset:
+			// steamlang.EResult_Fail,
+			// steamlang.EResult_ServiceUnavailable,
+			// steamlang.EResult_TryAnotherCM
+			a.client.setState(StateLoginFailed)
+			waitTime = time.Second * 5
+		}
 
 		a.client.Emit(&LogOnFailedEvent{
-			Result: steamlang.EResult(body.GetEresult()),
+			Result:   steamlang.EResult(body.GetEresult()),
+			WaitTime: waitTime,
 		})
 	}
 }
@@ -213,7 +258,7 @@ func (a *Auth) handleLoggedOff(packet *protocol.Packet) {
 // 	hash.Write(packet.Data)
 // 	sha := hash.Sum(nil)
 
-// 	msg := protocol.NewClientMsgProtobuf(steamlang.EMsg_ClientUpdateMachineAuthResponse, &protobuf.CMsgClientUpdateMachineAuthResponse{
+// 	msg := protocol.NewClientMsgProtobuf(steamlang.EMsg_ClientUpdateMachineAuthResponse, &protobuf.CMsgClientMachin{
 // 		ShaFile: sha,
 // 	})
 // 	msg.SetTargetJobId(packet.SourceJobId)
