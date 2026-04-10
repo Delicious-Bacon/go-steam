@@ -28,7 +28,7 @@ type connection interface {
 const tcpConnectionMagic uint32 = 0x31305456 // "VT01"
 
 type tcpConnection struct {
-	conn        *net.TCPConn
+	conn        net.Conn
 	ciph        cipher.Block
 	cipherMutex sync.RWMutex
 }
@@ -40,26 +40,21 @@ func (c *tcpConnection) SetReadDeadline(t time.Time) error {
 // dialTCP with an optional proxy dialer
 func dialTCP(ctx context.Context, maybeProxyDialer proxy.ContextDialer, addr *net.TCPAddr) (*tcpConnection, error) {
 
-	tcpConn := &tcpConnection{}
+	var (
+		conn net.Conn
+		err  error
+	)
 
 	if maybeProxyDialer != nil {
-		gConn, err := maybeProxyDialer.DialContext(ctx, "tcp", addr.String())
-		if err != nil {
-			return nil, err
-		}
-
-		tcpConn.conn = gConn.(*net.TCPConn)
+		conn, err = maybeProxyDialer.DialContext(ctx, "tcp", addr.String())
 	} else {
-		d := &net.Dialer{}
-		conn, err := d.DialContext(ctx, "tcp", addr.String())
-		if err != nil {
-			return nil, err
-		}
-
-		tcpConn.conn = conn.(*net.TCPConn)
+		conn, err = (&net.Dialer{}).DialContext(ctx, "tcp", addr.String())
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	return tcpConn, nil
+	return &tcpConnection{conn: conn}, nil
 }
 
 func (c *tcpConnection) Read() (*protocol.Packet, error) {
