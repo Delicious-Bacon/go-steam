@@ -87,7 +87,7 @@ type Client struct {
 	writeChan chan protocol.IMsg
 	writeBuf  *bytes.Buffer
 
-	proxyDialer *proxy.Dialer
+	proxyDialer proxy.ContextDialer
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -193,7 +193,7 @@ func (c *Client) SessionId() int32 {
 
 // SetProxyDialer to use for Steam connections
 // Disconnects the connection if it is currently connected
-func (c *Client) SetProxyDialer(dialer *proxy.Dialer) {
+func (c *Client) SetProxyDialer(dialer proxy.ContextDialer) {
 	if c.State() > StateDisconnected {
 		c.disconnect(false)
 	}
@@ -206,7 +206,7 @@ func (c *Client) SetProxyDialer(dialer *proxy.Dialer) {
 // This method tries to use an address from the Steam Directory and falls
 // back to the built-in server list if the Steam Directory can't be reached.
 // If you want to connect to a specific server, use `ConnectTo`.
-func (c *Client) Connect() (*netutil.PortAddr, error) {
+func (c *Client) Connect(ctx context.Context) (*netutil.PortAddr, error) {
 	var server *netutil.PortAddr
 
 	// try to initialize the directory cache
@@ -219,20 +219,20 @@ func (c *Client) Connect() (*netutil.PortAddr, error) {
 		server = GetRandomCM()
 	}
 
-	err := c.ConnectTo(server)
+	err := c.ConnectTo(ctx, server)
 	return server, err
 }
 
 // Connects to a specific server.
 // You may want to use one of the `GetRandom*CM()` functions in this package.
 // If this client is already connected, it is disconnected first.
-func (c *Client) ConnectTo(addr *netutil.PortAddr) error {
-	return c.ConnectToBind(addr, nil)
+func (c *Client) ConnectTo(ctx context.Context, addr *netutil.PortAddr) error {
+	return c.ConnectToBind(ctx, addr)
 }
 
 // Connects to a specific server, and binds to a specified local IP
 // If this client is already connected, it is disconnected first.
-func (c *Client) ConnectToBind(addr *netutil.PortAddr, local *net.TCPAddr) error {
+func (c *Client) ConnectToBind(ctx context.Context, addr *netutil.PortAddr) error {
 	if c.State() > StateDisconnected {
 
 		c.disconnect(false)
@@ -240,7 +240,7 @@ func (c *Client) ConnectToBind(addr *netutil.PortAddr, local *net.TCPAddr) error
 
 	c.setState(StateConnecting)
 
-	conn, err := dialTCP(c.proxyDialer, local, addr.ToTCPAddr())
+	conn, err := dialTCP(ctx, c.proxyDialer, addr.ToTCPAddr())
 	if err != nil {
 		c.Fatalf(fmt.Errorf("dialTCP during connect failed: %w", err))
 		return err

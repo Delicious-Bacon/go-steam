@@ -10,7 +10,6 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -224,7 +223,7 @@ func fixProto(outDir, path string) {
 	// It tries to load each dependency of a file as a seperate package (but in a very, very wrong way).
 	// Because we want some files in the same package, we'll remove those imports to local files.
 
-	file, err := ioutil.ReadFile(path)
+	file, err := os.ReadFile(path)
 	if err != nil {
 		panic(err)
 	}
@@ -269,7 +268,7 @@ func fixProto(outDir, path string) {
 		return []byte(filename + "_" + string(match))
 	})
 
-	err = ioutil.WriteFile(path, file, os.ModePerm)
+	err = os.WriteFile(path, file, os.ModePerm)
 	if err != nil {
 		panic(err)
 	}

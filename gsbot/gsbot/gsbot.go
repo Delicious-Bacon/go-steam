@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -59,7 +60,7 @@ func main() {
 	}
 	client.RegisterPacketHandler(debug)
 	serverList := gsbot.NewServerList(bot, "serverlist.json")
-	serverList.Connect()
+	serverList.Connect(context.Background())
 
 	for event := range client.Events() {
 		auth.HandleEvent(event)

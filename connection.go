@@ -1,6 +1,7 @@
 package steam
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
@@ -37,27 +38,28 @@ func (c *tcpConnection) SetReadDeadline(t time.Time) error {
 }
 
 // dialTCP with an optional proxy dialer
-func dialTCP(maybeProxyDialer *proxy.Dialer, laddr, raddr *net.TCPAddr) (*tcpConnection, error) {
-	var conn *net.TCPConn
-	var err error
+func dialTCP(ctx context.Context, maybeProxyDialer proxy.ContextDialer, addr *net.TCPAddr) (*tcpConnection, error) {
+
+	tcpConn := &tcpConnection{}
+
 	if maybeProxyDialer != nil {
-		gConn, err := (*maybeProxyDialer).Dial("tcp", raddr.String())
+		gConn, err := maybeProxyDialer.DialContext(ctx, "tcp", addr.String())
 		if err != nil {
 			return nil, err
 		}
 
-		conn = gConn.(*net.TCPConn)
+		tcpConn.conn = gConn.(*net.TCPConn)
 	} else {
-		conn, err = net.DialTCP("tcp", laddr, raddr)
+		d := &net.Dialer{}
+		conn, err := d.DialContext(ctx, "tcp", addr.String())
+		if err != nil {
+			return nil, err
+		}
+
+		tcpConn.conn = conn.(*net.TCPConn)
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
-	return &tcpConnection{
-		conn: conn,
-	}, nil
+	return tcpConn, nil
 }
 
 func (c *tcpConnection) Read() (*protocol.Packet, error) {

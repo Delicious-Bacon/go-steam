@@ -10,10 +10,10 @@
 package gsbot
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
@@ -64,7 +64,7 @@ func NewAuth(bot *GsBot, details *steam.LogOnDetails, sentryPath string) *Auth {
 // This is called automatically after every ConnectedEvent, but must be called once again manually
 // with an authcode if Steam requires it when logging on for the first time.
 func (a *Auth) LogOn() {
-	sentry, err := ioutil.ReadFile(a.sentryPath)
+	sentry, err := os.ReadFile(a.sentryPath)
 	if err != nil {
 		a.bot.Log.Printf("Error loading sentry file from path %v - This is normal if you're logging in for the first time.\n", a.sentryPath)
 	}
@@ -80,7 +80,7 @@ func (a *Auth) HandleEvent(event interface{}) {
 		a.bot.Log.Printf("Logged on (%v) with SteamId %v and account flags %v", e.Result, e.ClientSteamId, e.AccountFlags)
 	case *steam.MachineAuthUpdateEvent:
 		a.machineAuthHash = e.Hash
-		err := ioutil.WriteFile(a.sentryPath, e.Hash, 0666)
+		err := os.WriteFile(a.sentryPath, e.Hash, 0666)
 		if err != nil {
 			panic(err)
 		}
@@ -112,22 +112,22 @@ func (s *ServerList) HandleEvent(event interface{}) {
 		if err != nil {
 			panic(err)
 		}
-		err = ioutil.WriteFile(s.listPath, d, 0666)
+		err = os.WriteFile(s.listPath, d, 0666)
 		if err != nil {
 			panic(err)
 		}
 	}
 }
 
-func (s *ServerList) Connect() (bool, error) {
-	return s.ConnectBind(nil)
+func (s *ServerList) Connect(ctx context.Context) (bool, error) {
+	return s.ConnectBind(ctx, nil)
 }
 
-func (s *ServerList) ConnectBind(laddr *net.TCPAddr) (bool, error) {
-	d, err := ioutil.ReadFile(s.listPath)
+func (s *ServerList) ConnectBind(ctx context.Context, laddr *net.TCPAddr) (bool, error) {
+	d, err := os.ReadFile(s.listPath)
 	if err != nil {
 		s.bot.Log.Println("Connecting to random server.")
-		_, err := s.bot.Client.Connect()
+		_, err := s.bot.Client.Connect(ctx)
 		return err == nil, err
 	}
 	var addrs []*netutil.PortAddr
@@ -137,7 +137,7 @@ func (s *ServerList) ConnectBind(laddr *net.TCPAddr) (bool, error) {
 	}
 	raddr := addrs[rand.Intn(len(addrs))]
 	s.bot.Log.Printf("Connecting to %v from server list\n", raddr)
-	err = s.bot.Client.ConnectToBind(raddr, laddr)
+	err = s.bot.Client.ConnectToBind(ctx, raddr)
 	return err == nil, err
 }
 
@@ -170,12 +170,12 @@ func (d *Debug) HandlePacket(packet *protocol.Packet) {
 	name := path.Join(d.base, "packets", fmt.Sprintf("%d_%d_%s", time.Now().Unix(), d.packetId, packet.EMsg))
 
 	text := packet.String() + "\n\n" + hex.Dump(packet.Data)
-	err := ioutil.WriteFile(name+".txt", []byte(text), 0666)
+	err := os.WriteFile(name+".txt", []byte(text), 0666)
 	if err != nil {
 		panic(err)
 	}
 
-	err = ioutil.WriteFile(name+".bin", packet.Data, 0666)
+	err = os.WriteFile(name+".bin", packet.Data, 0666)
 	if err != nil {
 		panic(err)
 	}
@@ -184,7 +184,7 @@ func (d *Debug) HandlePacket(packet *protocol.Packet) {
 func (d *Debug) HandleEvent(event interface{}) {
 	d.eventId++
 	name := fmt.Sprintf("%d_%d_%s.txt", time.Now().Unix(), d.eventId, name(event))
-	err := ioutil.WriteFile(path.Join(d.base, "events", name), []byte(spew.Sdump(event)), 0666)
+	err := os.WriteFile(path.Join(d.base, "events", name), []byte(spew.Sdump(event)), 0666)
 	if err != nil {
 		panic(err)
 	}
